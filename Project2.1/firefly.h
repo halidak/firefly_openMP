@@ -107,6 +107,16 @@ double schwefel221Function(const vector<double>& x) {
     }
     return maxVal;
 }
+
+// Sphere Function
+double sphereFunction(const vector<double>& x) {
+    double sum = 0.0;
+    for (double xi : x) {
+        sum += xi * xi;
+    }
+    return sum;
+}
+
  
 //-----------Multimodalne funkcije----------------
 // Benchmark funkcija Rastrigin
@@ -217,7 +227,40 @@ double schafferFunction(const vector<double>& x) {
     return sum;
 }
 
+// Alpine Function
+double alpineFunction(const vector<double>& x) {
+    double sum = 0.0;
+    for (double xi : x) {
+        sum += abs(xi * sin(xi) + 0.1 * xi);
+    }
+    return sum;
+}
 
+// Ackley Function
+double ackleyFunction(const vector<double>& x) {
+    double sum1 = 0.0;
+    double sum2 = 0.0;
+    int d = x.size();
+    for (double xi : x) {
+        sum1 += xi * xi;
+        sum2 += cos(2 * M_PI * xi);
+    }
+    return -20.0 * exp(-0.2 * sqrt(sum1 / d)) - exp(sum2 / d) + 20 + M_E;
+}
+
+// Schwefel 2.22 Function
+double schwefel222Function(const vector<double>& x) {
+    double sum = 0.0;
+    double prod = 1.0;
+    for (double xi : x) {
+        sum += abs(xi);
+        prod *= abs(xi);
+    }
+    return sum + prod;
+}
+
+
+//-----------Firefly algoritam----------------
 // Generisanje slucajnog broja izmedju min i max
 double randomDouble(double min, double max) {
     return min + (max - min) * (rand() / (RAND_MAX + 1.0));
