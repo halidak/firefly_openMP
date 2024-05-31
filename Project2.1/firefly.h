@@ -267,7 +267,7 @@ double randomDouble(double min, double max) {
 }
 
 // Firefly algoritam
-void fireflyAlgorithm(int n, int d, int maxGenerations, int numThreads, vector<double>& results) {
+void fireflyAlgorithm(int n, int d, int maxGenerations, int numThreads, vector<double>& results, vector<double>& meanBestPerGeneration) {
     // Postavljanje broja niti za OpenMP
     omp_set_num_threads(numThreads);
 
@@ -313,15 +313,21 @@ void fireflyAlgorithm(int n, int d, int maxGenerations, int numThreads, vector<d
                 }
             }
         }
+
+        // Pronalazenje najboljeg resenja u ovoj generaciji
+        int bestIndex = min_element(lightIntensity.begin(), lightIntensity.end()) - lightIntensity.begin();
+        meanBestPerGeneration.push_back(lightIntensity[bestIndex]);
+
         if (t % 100 == 0) {
             cout << "Generacija: " << t << endl;
         }
     }
 
-    // Pronalazenje najboljeg resenja
+    // Pronalazenje najboljeg resenja nakon svih generacija
     int bestIndex = min_element(lightIntensity.begin(), lightIntensity.end()) - lightIntensity.begin();
     results.push_back(lightIntensity[bestIndex]);
 }
+
 
 int main() {
     srand(time(0));  // Inicijalizacija random seed-a
@@ -335,14 +341,17 @@ int main() {
     // Izlazne metrike
     vector<double> execTimes(30);
     vector<double> bestResults(30);
+    vector<vector<double>> meanBestValues(30);
 
     cout << "Pokretanje algoritma 30 puta." << endl;
     for (int run = 0; run < 30; ++run) {
         auto start = high_resolution_clock::now();
 
         vector<double> results;
-        fireflyAlgorithm(n, d, maxGenerations, numThreads, results);
-        bestResults[run] = results[0];  // Cuvamo samo najbolje rešenje iz svakog pokretanja
+        vector<double> meanBestPerGeneration;
+        fireflyAlgorithm(n, d, maxGenerations, numThreads, results, meanBestPerGeneration);
+        bestResults[run] = results[0];  // Cuvamo samo najbolje resenje iz svakog pokretanja
+        meanBestValues[run] = meanBestPerGeneration;
 
         auto end = high_resolution_clock::now();
         duration<double> duration = end - start;
@@ -357,6 +366,16 @@ int main() {
         << accumulate(bestResults.begin(), bestResults.end(), 0.0) / bestResults.size() << endl;
     cout << "Prosecno vreme izvrsavanja: "
         << accumulate(execTimes.begin(), execTimes.end(), 0.0) / execTimes.size() << " sekundi" << endl;
+
+    // Prikaz srednje najbolje vrednosti po generaciji
+    cout << "Srednja najbolja vrednost po generaciji (preko 30 pokretanja): " << endl;
+    for (int gen = 0; gen < maxGenerations; ++gen) {
+        double sum = 0.0;
+        for (int run = 0; run < 30; ++run) {
+            sum += meanBestValues[run][gen];
+        }
+        cout << "Generacija " << gen << ": " << sum / 30 << endl;
+    }
 
     return 0;
 }
