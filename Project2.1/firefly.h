@@ -13,11 +13,34 @@
 using namespace std;
 using namespace std::chrono;
 
+//-----------Unimodalne funkcije----------------
 // Ciljna funkcija sum squares
 double sumOfSquaresFunction(const vector<double>& x) {
     double sum = 0.0;
     for (double xi : x) {
         sum += xi * xi;
+    }
+    return sum;
+}
+
+// Benchmark funkcija Step2
+double step2Function(const vector<double>& x) {
+    double sum = 0.0;
+    for (double xi : x) {
+        sum += pow(floor(xi) + 0.5, 2);
+    }
+    return sum;
+}
+
+// Benchmark funkcija Quartic
+double quarticFunction(const vector<double>& x) {
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    static std::uniform_real_distribution<double> dist(0.0, 1.0);
+
+    double sum = 0.0;
+    for (size_t i = 0; i < x.size(); ++i) {
+        sum += (i + 1) * pow(x[i], 4) + dist(gen);
     }
     return sum;
 }
@@ -36,15 +59,56 @@ double powellFunction(const vector<double>& x) {
     return sum;
 }
 
-// Benchmark funkcija Step2
-double step2Function(const vector<double>& x) {
+// Benchmark funkcija Rosenbrock
+double rosenbrockFunction(const vector<double>& x) {
     double sum = 0.0;
-    for (double xi : x) {
-        sum += pow(floor(xi) + 0.5, 2);
+    for (size_t i = 0; i < x.size() - 1; ++i) {
+        sum += 100 * pow(x[i + 1] - x[i] * x[i], 2) + pow(x[i] - 1, 2);
     }
     return sum;
 }
 
+// Benchmark funkcija Dixon-Price
+double dixonPriceFunction(const vector<double>& x) {
+    double sum = pow(x[0] - 1, 2);
+    for (size_t i = 1; i < x.size(); ++i) {
+        sum += i * pow(2 * x[i] * x[i] - x[i - 1], 2);
+    }
+    return sum;
+}
+
+// Benchmark funkcija Schwefel 1.2
+double schwefel12Function(const vector<double>& x) {
+    double sum = 0.0;
+    for (size_t i = 0; i < x.size(); ++i) {
+        double innerSum = 0.0;
+        for (size_t j = 0; j <= i; ++j) {
+            innerSum += x[j];
+        }
+        sum += innerSum * innerSum;
+    }
+    return sum;
+}
+
+// Benchmark funkcija Schwefel 2.20
+double schwefel220Function(const vector<double>& x) {
+    double sum = 0.0;
+    for (double xi : x) {
+        sum += abs(xi);
+    }
+    return sum;
+}
+
+// Benchmark funkcija Schwefel 2.21
+double schwefel221Function(const vector<double>& x) {
+    double maxVal = 0.0;
+    for (double xi : x) {
+        maxVal = max(maxVal, abs(xi));
+    }
+    return maxVal;
+}
+ 
+//-----------Multimodalne funkcije----------------
 // Benchmark funkcija Rastrigin
 double rastriginFunction(const vector<double>& x) {
     int d = x.size();
@@ -95,7 +159,7 @@ void fireflyAlgorithm(int n, int d, int maxGenerations, int numThreads, vector<d
             fireflies[i][j] = dist(gen); // Koristimo normalnu raspodelu
         }
         // Izračunavanje intenziteta svetlosti za svakog svitka
-        lightIntensity[i] = step2Function(fireflies[i]);
+        lightIntensity[i] = quarticFunction(fireflies[i]);
     }
 
     // Parametri algoritma
@@ -118,7 +182,7 @@ void fireflyAlgorithm(int n, int d, int maxGenerations, int numThreads, vector<d
                         double beta = beta0 * exp(-gamma * r * r);
                         fireflies[i][k] += beta * (fireflies[j][k] - fireflies[i][k]) + alpha * dist(gen); // Koristimo normalnu raspodelu
                     }
-                    lightIntensity[i] = step2Function(fireflies[i]);
+                    lightIntensity[i] = quarticFunction(fireflies[i]);
                 }
             }
         }
@@ -137,7 +201,7 @@ int main() {
 
     int n = 50;  // Broj svitaca
     int d = 30;  // Dimenzija problema
-    int maxGenerations = 1000;  // Maksimalan broj generacija
+    int maxGenerations = 500;  // Maksimalan broj generacija
 
     int numThreads = 6;  // Broj niti
 
