@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <numeric>  
 #include <cstdlib>  
-#include <numeric>
 #include <random>
 
 using namespace std;
@@ -117,7 +116,6 @@ double sphereFunction(const vector<double>& x) {
     return sum;
 }
 
- 
 //-----------Multimodalne funkcije----------------
 // Benchmark funkcija Rastrigin
 double rastriginFunction(const vector<double>& x) {
@@ -176,7 +174,7 @@ double michalewiczFunction(const vector<double>& x) {
     return -sum;
 }
 
-// Schwefel Function
+// Shekel Function
 double shekelFunction(const vector<double>& x) {
     const int m = 10;
     const double a[m][4] = {
@@ -219,10 +217,10 @@ double schwefelFunction(const vector<double>& x) {
 // Schaffer Function
 double schafferFunction(const vector<double>& x) {
     double sum = 0.0;
-    for (size_t i = 0; i < x.size() - 1; ++i) {
-        double num = pow(sin(sqrt(x[i] * x[i] + x[i + 1] * x[i + 1])), 2) - 0.5;
-        double denom = pow(1 + 0.001 * (x[i] * x[i] + x[i + 1] * x[i + 1]), 2);
-        sum += 0.5 + num / denom;
+    for (int i = 0; i < x.size() - 1; ++i) {
+        double temp1 = x[i] * x[i] + x[i + 1] * x[i + 1];
+        double temp2 = sin(sqrt(temp1)) * sin(sqrt(temp1)) - 0.5;
+        sum += 0.5 + temp2 / pow(1 + 0.001 * temp1, 2);
     }
     return sum;
 }
@@ -238,143 +236,158 @@ double alpineFunction(const vector<double>& x) {
 
 // Ackley Function
 double ackleyFunction(const vector<double>& x) {
+    int d = x.size();
     double sum1 = 0.0;
     double sum2 = 0.0;
-    int d = x.size();
-    for (double xi : x) {
-        sum1 += xi * xi;
-        sum2 += cos(2 * M_PI * xi);
+
+    for (int i = 0; i < d; ++i) {
+        sum1 += x[i] * x[i];
+        sum2 += cos(2 * M_PI * x[i]);
     }
-    return -20.0 * exp(-0.2 * sqrt(sum1 / d)) - exp(sum2 / d) + 20 + M_E;
+
+    return -20.0 * exp(-0.2 * sqrt(sum1 / d)) - exp(sum2 / d) + 20.0 + M_E;
 }
 
-// Schwefel 2.22 Function
+// Ciljna funkcija Schwefel 2.22
 double schwefel222Function(const vector<double>& x) {
     double sum = 0.0;
     double prod = 1.0;
+
     for (double xi : x) {
         sum += abs(xi);
         prod *= abs(xi);
     }
+
     return sum + prod;
 }
 
+typedef double (*BenchmarkFunction)(const vector<double>&);
 
-//-----------Firefly algoritam----------------
-// Generisanje slucajnog broja izmedju min i max
-double randomDouble(double min, double max) {
-    return min + (max - min) * (rand() / (RAND_MAX + 1.0));
-}
+void fireflyAlgorithm(int n, int d, int maxGenerations, int numThreads, BenchmarkFunction benchmarkFunction, vector<double>& results, vector<double>& meanBestPerGeneration) {
+    const double alpha = 0.5; // Initial value of alpha
+    const double betaMin = 0.2;
+    const double gamma = 1.0;
 
-// Firefly algoritam
-void fireflyAlgorithm(int n, int d, int maxGenerations, int numThreads, vector<double>& results, vector<double>& meanBestPerGeneration) {
-    // Postavljanje broja niti za OpenMP
-    omp_set_num_threads(numThreads);
+    // Random number generation
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<double> dist(-100.0, 100.0);
+    std::uniform_real_distribution<double> rand01(0.0, 1.0);
 
-    // Inicijalizacija generatora slucajnih brojeva
-    random_device rd;
-    mt19937 gen(rd());
-    normal_distribution<double> dist(0, 1); // Normalna (Gausova) raspodela
-
+    // Initialization of fireflies
     vector<vector<double>> fireflies(n, vector<double>(d));
     vector<double> lightIntensity(n);
 
-    // Inicijalizacija populacije
-#pragma omp parallel for
+    // Parallel initialization
+#pragma omp parallel for num_threads(numThreads)
     for (int i = 0; i < n; ++i) {
         for (int j = 0; j < d; ++j) {
-            fireflies[i][j] = dist(gen); // Koristimo normalnu raspodelu
+            fireflies[i][j] = dist(gen);
         }
-        // Izracunavanje intenziteta svetlosti za svakog svitka
-        lightIntensity[i] = schafferFunction(fireflies[i]);
+        lightIntensity[i] = benchmarkFunction(fireflies[i]);
     }
 
-    // Parametri algoritma
-    double alpha = 0.5; // Povećali smo alpha
-    double beta0 = 1.0;
-    double gamma = 0.01; // Smanjili smo gamma
-
-    // Evolucija kroz generacije
     for (int t = 0; t < maxGenerations; ++t) {
-#pragma omp parallel for schedule(dynamic)
+        // Parallel main loop
+#pragma omp parallel for num_threads(numThreads)
         for (int i = 0; i < n; ++i) {
             for (int j = 0; j < n; ++j) {
                 if (lightIntensity[j] < lightIntensity[i]) {
                     double r = 0.0;
                     for (int k = 0; k < d; ++k) {
-                        r += (fireflies[i][k] - fireflies[j][k]) * (fireflies[i][k] - fireflies[j][k]);
+                        r += pow(fireflies[i][k] - fireflies[j][k], 2);
                     }
                     r = sqrt(r);
+
+                    double beta = betaMin + (1.0 - betaMin) * exp(-gamma * r * r);
+
                     for (int k = 0; k < d; ++k) {
-                        double beta = beta0 * exp(-gamma * r * r);
-                        fireflies[i][k] += beta * (fireflies[j][k] - fireflies[i][k]) + alpha * dist(gen); // Koristimo normalnu raspodelu
+                        double randVal = rand01(gen);
+                        fireflies[i][k] = fireflies[i][k] * (1.0 - beta) + fireflies[j][k] * beta + alpha * (randVal - 0.5);
                     }
-                    lightIntensity[i] = schafferFunction(fireflies[i]);
+                    lightIntensity[i] = benchmarkFunction(fireflies[i]);
                 }
             }
         }
 
-        // Pronalazenje najboljeg resenja u ovoj generaciji
-        int bestIndex = min_element(lightIntensity.begin(), lightIntensity.end()) - lightIntensity.begin();
-        meanBestPerGeneration.push_back(lightIntensity[bestIndex]);
-
-        if (t % 100 == 0) {
-            cout << "Generacija: " << t << endl;
-        }
+        double bestLightIntensity = *min_element(lightIntensity.begin(), lightIntensity.end());
+        meanBestPerGeneration.push_back(bestLightIntensity);
     }
 
-    // Pronalazenje najboljeg resenja nakon svih generacija
-    int bestIndex = min_element(lightIntensity.begin(), lightIntensity.end()) - lightIntensity.begin();
-    results.push_back(lightIntensity[bestIndex]);
+    double globalBest = *min_element(lightIntensity.begin(), lightIntensity.end());
+    results.push_back(globalBest);
 }
 
-
 int main() {
-    srand(time(0));  // Inicijalizacija random seed-a
+    srand(time(0));  // Initialize random seed
 
-    int n = 50;  // Broj svitaca
-    int d = 30;  // Dimenzija problema
-    int maxGenerations = 500;  // Maksimalan broj generacija
+    int n = 50;  // Number of fireflies
+    int d = 30;  // Problem dimension
+    int maxGenerations = 512;  // Maximum number of generations
+    int numThreads = 2;  // Number of threads
 
-    int numThreads = 6;  // Broj niti
+    // Define an array of benchmark functions
+    BenchmarkFunction benchmarkFunctions[] = {
+        schwefel222Function,
+        sumOfSquaresFunction,
+        step2Function,
+        quarticFunction,
+        powellFunction,
+        rosenbrockFunction,
+        dixonPriceFunction,
+        schwefel12Function,
+        schwefel220Function,
+        schwefel221Function,
+        sphereFunction,
+        rastriginFunction,
+        griewankFunction,
+        csendesFunction,
+        colvilleFunction,
+        easomFunction,
+        michalewiczFunction,
+        shekelFunction,
+        schwefel24Function,
+        schwefelFunction,
+        schafferFunction,
+        alpineFunction,
+        ackleyFunction,
+    };
 
-    // Izlazne metrike
-    vector<double> execTimes(30);
-    vector<double> bestResults(30);
-    vector<vector<double>> meanBestValues(30);
+    int numFunctions = sizeof(benchmarkFunctions) / sizeof(benchmarkFunctions[0]);
 
-    cout << "Pokretanje algoritma 30 puta." << endl;
-    for (int run = 0; run < 30; ++run) {
-        auto start = high_resolution_clock::now();
+    // Loop over each benchmark function
+    for (int f = 0; f < numFunctions; ++f) {
+        // Output metrics
+        vector<double> execTimes(30);
+        vector<double> bestResults(30);
+        vector<vector<double>> meanBestValues(30);
 
-        vector<double> results;
-        vector<double> meanBestPerGeneration;
-        fireflyAlgorithm(n, d, maxGenerations, numThreads, results, meanBestPerGeneration);
-        bestResults[run] = results[0];  // Cuvamo samo najbolje resenje iz svakog pokretanja
-        meanBestValues[run] = meanBestPerGeneration;
-
-        auto end = high_resolution_clock::now();
-        duration<double> duration = end - start;
-        execTimes[run] = duration.count();
-
-        cout << "Pokretanje broj " << run + 1 << " zavrseno." << endl;
-        cout << "Srednja najbolja vrednost nakon ovog pokretanja: " << accumulate(results.begin(), results.end(), 0.0) / results.size() << endl;
-    }
-
-    // Prikaz rezultata
-    cout << "Prosecno najbolje resenje (preko 30 pokretanja): "
-        << accumulate(bestResults.begin(), bestResults.end(), 0.0) / bestResults.size() << endl;
-    cout << "Prosecno vreme izvrsavanja: "
-        << accumulate(execTimes.begin(), execTimes.end(), 0.0) / execTimes.size() << " sekundi" << endl;
-
-    // Prikaz srednje najbolje vrednosti po generaciji
-    cout << "Srednja najbolja vrednost po generaciji (preko 30 pokretanja): " << endl;
-    for (int gen = 0; gen < maxGenerations; ++gen) {
-        double sum = 0.0;
+        cout << "Running firefly algorithm for benchmark function " << f + 1 << endl;
         for (int run = 0; run < 30; ++run) {
-            sum += meanBestValues[run][gen];
+            auto start = high_resolution_clock::now();
+
+            vector<double> results;
+            vector<double> meanBestPerGeneration;
+            fireflyAlgorithm(n, d, maxGenerations, numThreads, benchmarkFunctions[f], results, meanBestPerGeneration);
+            bestResults[run] = results[0];  // Save only the best solution from each run
+            meanBestValues[run] = meanBestPerGeneration;
+
+            auto end = high_resolution_clock::now();
+            duration<double> duration = end - start;
+            execTimes[run] = duration.count();
+
+            cout << "Run " << run + 1 << " completed." << endl;
+            cout << "Best value after this run: " << results[0] << endl;
         }
-        cout << "Generacija " << gen << ": " << sum / 30 << endl;
+
+        // Display results
+        double averageBestSolution = accumulate(bestResults.begin(), bestResults.end(), 0.0) / bestResults.size();
+        double averageExecutionTime = accumulate(execTimes.begin(), execTimes.end(), 0.0) / execTimes.size();
+
+        cout << "Benchmark function " << f + 1 << " results:" << endl;
+        cout << "Average best solution (over 30 runs): " << averageBestSolution << endl;
+        cout << "Average execution time: " << averageExecutionTime << " seconds" << endl;
+        cout << "=====================================" << endl;
     }
 
     return 0;
