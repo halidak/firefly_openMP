@@ -266,15 +266,15 @@ double randomDouble(double min, double max) {
     return min + (max - min) * (rand() / (RAND_MAX + 1.0));
 }
 
+
+
 // Firefly algoritam
 void fireflyAlgorithm(int n, int d, int maxGenerations, int numThreads, vector<double>& results, vector<double>& meanBestPerGeneration) {
-    // Postavljanje broja niti za OpenMP
     omp_set_num_threads(numThreads);
 
-    // Inicijalizacija generatora slucajnih brojeva
     random_device rd;
     mt19937 gen(rd());
-    normal_distribution<double> dist(0, 1); // Normalna (Gausova) raspodela
+    uniform_real_distribution<double> dist(-0.5, 0.5); // Uniformna raspodela u manjem opsegu
 
     vector<vector<double>> fireflies(n, vector<double>(d));
     vector<double> lightIntensity(n);
@@ -283,19 +283,21 @@ void fireflyAlgorithm(int n, int d, int maxGenerations, int numThreads, vector<d
 #pragma omp parallel for
     for (int i = 0; i < n; ++i) {
         for (int j = 0; j < d; ++j) {
-            fireflies[i][j] = dist(gen); // Koristimo normalnu raspodelu
+            fireflies[i][j] = dist(gen);
         }
-        // Izracunavanje intenziteta svetlosti za svakog svitka
-        lightIntensity[i] = schafferFunction(fireflies[i]);
+        lightIntensity[i] = quarticFunction(fireflies[i]);
     }
 
-    // Parametri algoritma
-    double alpha = 0.5; // Povećali smo alpha
+    double alpha = 0.5;
     double beta0 = 1.0;
-    double gamma = 0.01; // Smanjili smo gamma
+    double gamma = 0.01;
 
-    // Evolucija kroz generacije
+    vector<double> bestSolution = fireflies[0];
+    double bestIntensity = lightIntensity[0];
+
     for (int t = 0; t < maxGenerations; ++t) {
+        alpha *= 0.98; // Adaptivni alpha
+
 #pragma omp parallel for schedule(dynamic)
         for (int i = 0; i < n; ++i) {
             for (int j = 0; j < n; ++j) {
@@ -307,36 +309,65 @@ void fireflyAlgorithm(int n, int d, int maxGenerations, int numThreads, vector<d
                     r = sqrt(r);
                     for (int k = 0; k < d; ++k) {
                         double beta = beta0 * exp(-gamma * r * r);
-                        fireflies[i][k] += beta * (fireflies[j][k] - fireflies[i][k]) + alpha * dist(gen); // Koristimo normalnu raspodelu
+                        fireflies[i][k] += beta * (fireflies[j][k] - fireflies[i][k]) + alpha * dist(gen);
+
+                        // Ograničavanje prostora pretrage
+                        fireflies[i][k] = max(-5.0, min(5.0, fireflies[i][k]));
                     }
-                    lightIntensity[i] = schafferFunction(fireflies[i]);
+
+                    // Lokalno pretraživanje
+                    vector<double> localBest = fireflies[i];
+                    double localBestIntensity = quarticFunction(localBest);
+                    for (int k = 0; k < d; ++k) {
+                        double temp = localBest[k];
+                        localBest[k] += dist(gen) * 0.1;
+                        double newIntensity = quarticFunction(localBest);
+                        if (newIntensity < localBestIntensity) {
+                            localBestIntensity = newIntensity;
+                        }
+                        else {
+                            localBest[k] = temp;
+                        }
+                    }
+
+                    fireflies[i] = localBest;
+                    lightIntensity[i] = localBestIntensity;
                 }
             }
         }
 
-        // Pronalazenje najboljeg resenja u ovoj generaciji
-        int bestIndex = min_element(lightIntensity.begin(), lightIntensity.end()) - lightIntensity.begin();
-        meanBestPerGeneration.push_back(lightIntensity[bestIndex]);
+        // Elitizam
+        int currentBestIndex = min_element(lightIntensity.begin(), lightIntensity.end()) - lightIntensity.begin();
+        if (lightIntensity[currentBestIndex] < bestIntensity) {
+            bestSolution = fireflies[currentBestIndex];
+            bestIntensity = lightIntensity[currentBestIndex];
+        }
+        else {
+            // Zameni najgore rešenje sa najboljim iz prethodne generacije
+            int worstIndex = max_element(lightIntensity.begin(), lightIntensity.end()) - lightIntensity.begin();
+            fireflies[worstIndex] = bestSolution;
+            lightIntensity[worstIndex] = bestIntensity;
+        }
+
+        meanBestPerGeneration.push_back(bestIntensity);
 
         if (t % 100 == 0) {
-            cout << "Generacija: " << t << endl;
+            cout << "Generacija: " << t << ", Najbolja vrednost: " << bestIntensity << endl;
         }
     }
 
-    // Pronalazenje najboljeg resenja nakon svih generacija
-    int bestIndex = min_element(lightIntensity.begin(), lightIntensity.end()) - lightIntensity.begin();
-    results.push_back(lightIntensity[bestIndex]);
+    results.push_back(bestIntensity);
 }
 
-
+//-----------Main----------------
 int main() {
     srand(time(0));  // Inicijalizacija random seed-a
 
     int n = 50;  // Broj svitaca
     int d = 30;  // Dimenzija problema
-    int maxGenerations = 500;  // Maksimalan broj generacija
+    int maxGenerations = 2000;  // Maksimalan broj generacija
 
-    int numThreads = 6;  // Broj niti
+    int numThreads = 16;  // Broj niti
 
     // Izlazne metrike
     vector<double> execTimes(30);
