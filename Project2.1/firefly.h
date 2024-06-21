@@ -267,14 +267,12 @@ double randomDouble(double min, double max) {
 }
 
 
-
-// Firefly algoritam
-void fireflyAlgorithm(int n, int d, int maxGenerations, int numThreads, vector<double>& results, vector<double>& meanBestPerGeneration) {
+void fireflyAlgorithm(int n, int d, int maxGenerations, int numThreads, vector<double>& results, vector<double>& meanBestPerGeneration, double (*benchmarkFunction)(const vector<double>&)) {
     omp_set_num_threads(numThreads);
 
     random_device rd;
     mt19937 gen(rd());
-    uniform_real_distribution<double> dist(-0.5, 0.5); // Uniformna raspodela u manjem opsegu
+    uniform_real_distribution<double> dist(-0.5, 0.5);  // Zadržavamo opseg inicijalizacije
 
     vector<vector<double>> fireflies(n, vector<double>(d));
     vector<double> lightIntensity(n);
@@ -285,18 +283,21 @@ void fireflyAlgorithm(int n, int d, int maxGenerations, int numThreads, vector<d
         for (int j = 0; j < d; ++j) {
             fireflies[i][j] = dist(gen);
         }
-        lightIntensity[i] = quarticFunction(fireflies[i]);
+        lightIntensity[i] = benchmarkFunction(fireflies[i]) + 1e-10;  // Dodajemo malu konstantu
     }
 
-    double alpha = 0.5;
-    double beta0 = 1.0;
-    double gamma = 0.01;
+    double alpha = 0.2;
+    double beta0 = 0.5;
+    double gamma = 0.1;
 
     vector<double> bestSolution = fireflies[0];
     double bestIntensity = lightIntensity[0];
 
+    int stagnationCounter = 0;
+    double prevBestIntensity = DBL_MAX;
+
     for (int t = 0; t < maxGenerations; ++t) {
-        alpha *= 0.98; // Adaptivni alpha
+        alpha *= 0.99;
 
 #pragma omp parallel for schedule(dynamic)
         for (int i = 0; i < n; ++i) {
@@ -309,19 +310,18 @@ void fireflyAlgorithm(int n, int d, int maxGenerations, int numThreads, vector<d
                     r = sqrt(r);
                     for (int k = 0; k < d; ++k) {
                         double beta = beta0 * exp(-gamma * r * r);
-                        fireflies[i][k] += beta * (fireflies[j][k] - fireflies[i][k]) + alpha * dist(gen);
+                        fireflies[i][k] += beta * (fireflies[j][k] - fireflies[i][k]) + alpha * (dist(gen) - 0.5);
 
-                        // Ograničavanje prostora pretrage
-                        fireflies[i][k] = max(-5.0, min(5.0, fireflies[i][k]));
+                        fireflies[i][k] = max(-0.5, min(0.5, fireflies[i][k]));  
                     }
 
-                    // Lokalno pretraživanje
                     vector<double> localBest = fireflies[i];
-                    double localBestIntensity = quarticFunction(localBest);
+                    double localBestIntensity = benchmarkFunction(localBest) + 1e-10;
                     for (int k = 0; k < d; ++k) {
                         double temp = localBest[k];
-                        localBest[k] += dist(gen) * 0.1;
-                        double newIntensity = quarticFunction(localBest);
+                        localBest[k] += dist(gen) * 0.05;  // Smanjujemo korak lokalne pretrage
+                        localBest[k] = max(-0.5, min(0.5, localBest[k])); 
+                        double newIntensity = benchmarkFunction(localBest) + 1e-10;
                         if (newIntensity < localBestIntensity) {
                             localBestIntensity = newIntensity;
                         }
@@ -336,17 +336,33 @@ void fireflyAlgorithm(int n, int d, int maxGenerations, int numThreads, vector<d
             }
         }
 
-        // Elitizam
         int currentBestIndex = min_element(lightIntensity.begin(), lightIntensity.end()) - lightIntensity.begin();
         if (lightIntensity[currentBestIndex] < bestIntensity) {
             bestSolution = fireflies[currentBestIndex];
             bestIntensity = lightIntensity[currentBestIndex];
         }
         else {
-            // Zameni najgore rešenje sa najboljim iz prethodne generacije
             int worstIndex = max_element(lightIntensity.begin(), lightIntensity.end()) - lightIntensity.begin();
             fireflies[worstIndex] = bestSolution;
             lightIntensity[worstIndex] = bestIntensity;
+        }
+
+        if (bestIntensity < prevBestIntensity) {
+            stagnationCounter = 0;
+            prevBestIntensity = bestIntensity;
+        }
+        else {
+            stagnationCounter++;
+        }
+
+        if (stagnationCounter > 100) {
+            for (int i = n / 2; i < n; ++i) {
+                for (int j = 0; j < d; ++j) {
+                    fireflies[i][j] = dist(gen);
+                }
+                lightIntensity[i] = benchmarkFunction(fireflies[i]) + 1e-10;
+            }
+            stagnationCounter = 0;
         }
 
         meanBestPerGeneration.push_back(bestIntensity);
@@ -359,17 +375,14 @@ void fireflyAlgorithm(int n, int d, int maxGenerations, int numThreads, vector<d
     results.push_back(bestIntensity);
 }
 
-//-----------Main----------------
 int main() {
-    srand(time(0));  // Inicijalizacija random seed-a
+    srand(time(0));
 
-    int n = 50;  // Broj svitaca
-    int d = 30;  // Dimenzija problema
-    int maxGenerations = 2000;  // Maksimalan broj generacija
+    int n = 50;
+    int d = 30;
+    int maxGenerations = 2000;
+    int numThreads = 4;
 
-    int numThreads = 16;  // Broj niti
-
-    // Izlazne metrike
     vector<double> execTimes(30);
     vector<double> bestResults(30);
     vector<vector<double>> meanBestValues(30);
@@ -380,8 +393,8 @@ int main() {
 
         vector<double> results;
         vector<double> meanBestPerGeneration;
-        fireflyAlgorithm(n, d, maxGenerations, numThreads, results, meanBestPerGeneration);
-        bestResults[run] = results[0];  // Cuvamo samo najbolje resenje iz svakog pokretanja
+        fireflyAlgorithm(n, d, maxGenerations, numThreads, results, meanBestPerGeneration, rastriginFunction);
+        bestResults[run] = results[0];
         meanBestValues[run] = meanBestPerGeneration;
 
         auto end = high_resolution_clock::now();
@@ -389,24 +402,13 @@ int main() {
         execTimes[run] = duration.count();
 
         cout << "Pokretanje broj " << run + 1 << " zavrseno." << endl;
-        cout << "Srednja najbolja vrednost nakon ovog pokretanja: " << accumulate(results.begin(), results.end(), 0.0) / results.size() << endl;
+        cout << "Najbolja vrednost nakon ovog pokretanja: " << results[0] << endl;
     }
 
-    // Prikaz rezultata
     cout << "Prosecno najbolje resenje (preko 30 pokretanja): "
         << accumulate(bestResults.begin(), bestResults.end(), 0.0) / bestResults.size() << endl;
     cout << "Prosecno vreme izvrsavanja: "
         << accumulate(execTimes.begin(), execTimes.end(), 0.0) / execTimes.size() << " sekundi" << endl;
-
-    // Prikaz srednje najbolje vrednosti po generaciji
-    cout << "Srednja najbolja vrednost po generaciji (preko 30 pokretanja): " << endl;
-    for (int gen = 0; gen < maxGenerations; ++gen) {
-        double sum = 0.0;
-        for (int run = 0; run < 30; ++run) {
-            sum += meanBestValues[run][gen];
-        }
-        cout << "Generacija " << gen << ": " << sum / 30 << endl;
-    }
 
     return 0;
 }
