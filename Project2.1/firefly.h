@@ -272,7 +272,7 @@ void fireflyAlgorithm(int n, int d, int maxGenerations, int numThreads, vector<d
 
     random_device rd;
     mt19937 gen(rd());
-    uniform_real_distribution<double> dist(-0.5, 0.5);  // Zadržavamo opseg inicijalizacije
+    uniform_real_distribution<double> dist(-0.5, 0.5);  
 
     vector<vector<double>> fireflies(n, vector<double>(d));
     vector<double> lightIntensity(n);
@@ -381,7 +381,7 @@ int main() {
     int n = 50;
     int d = 30;
     int maxGenerations = 2000;
-    int numThreads = 4;
+    int numThreads = 1;
 
     vector<double> execTimes(30);
     vector<double> bestResults(30);
@@ -392,8 +392,8 @@ int main() {
         auto start = high_resolution_clock::now();
 
         vector<double> results;
-        vector<double> meanBestPerGeneration;
-        fireflyAlgorithm(n, d, maxGenerations, numThreads, results, meanBestPerGeneration, rastriginFunction);
+        vector<double> meanBestPerGeneration;     
+        fireflyAlgorithm(n, d, maxGenerations, numThreads, results, meanBestPerGeneration, schwefel221Function);
         bestResults[run] = results[0];
         meanBestValues[run] = meanBestPerGeneration;
 
